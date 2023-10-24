@@ -48,7 +48,7 @@ namespace {
 constexpr uint16_t kNumCommands = 3;
 
 struct ClientState {
-  struct ChppClientState chppClientState;
+  struct ChppEndpointState chppClientState;
   struct ChppOutgoingRequestState outReqStates[kNumCommands];
 };
 
@@ -62,7 +62,7 @@ constexpr struct ChppClient kClient = {
 };
 
 struct ServiceState {
-  struct ChppServiceState chppServiceState;
+  struct ChppEndpointState chppServiceState;
   struct ChppOutgoingRequestState outReqStates[kNumCommands];
 };
 
@@ -76,7 +76,7 @@ const struct ChppService kService = {
     .minLength = sizeof(struct ChppAppHeader),
 };
 
-void ValidateClientStateAndReqState(struct ChppClientState *clientState,
+void ValidateClientStateAndReqState(struct ChppEndpointState *clientState,
                                     const struct ChppAppHeader *request) {
   ASSERT_NE(clientState, nullptr);
   const uint8_t clientIdx = clientState->index;
@@ -84,27 +84,36 @@ void ValidateClientStateAndReqState(struct ChppClientState *clientState,
   ASSERT_NE(clientState->appContext, nullptr);
   ASSERT_NE(clientState->appContext->registeredClients, nullptr);
   ASSERT_NE(clientState->appContext->registeredClients[clientIdx], nullptr);
+  ASSERT_LT(request->command,
+            clientState->appContext->registeredClients[clientIdx]->outReqCount);
+  ASSERT_NE(clientState->appContext->registeredClientStates[clientIdx],
+            nullptr);
   ASSERT_NE(
       clientState->appContext->registeredClientStates[clientIdx]->outReqStates,
       nullptr);
-  ASSERT_LT(request->command,
-            clientState->appContext->registeredClients[clientIdx]->outReqCount);
+  ASSERT_NE(clientState->appContext->registeredClientStates[clientIdx]->context,
+            nullptr);
 }
 
-void ValidateServiceStateAndReqState(struct ChppServiceState *serviceState,
+void ValidateServiceStateAndReqState(struct ChppEndpointState *serviceState,
                                      const struct ChppAppHeader *request) {
   ASSERT_NE(serviceState, nullptr);
-  const uint8_t serviceIdx = CHPP_SERVICE_INDEX_OF_HANDLE(serviceState->handle);
+  const uint8_t serviceIdx = serviceState->index;
 
   ASSERT_NE(serviceState->appContext, nullptr);
   ASSERT_NE(serviceState->appContext->registeredServices, nullptr);
   ASSERT_NE(serviceState->appContext->registeredServices[serviceIdx], nullptr);
-  ASSERT_NE(serviceState->appContext->registeredServiceStates[serviceIdx]
-                ->outReqStates,
-            nullptr);
   ASSERT_LT(
       request->command,
       serviceState->appContext->registeredServices[serviceIdx]->outReqCount);
+  ASSERT_NE(serviceState->appContext->registeredServiceStates[serviceIdx],
+            nullptr);
+  ASSERT_NE(serviceState->appContext->registeredServiceStates[serviceIdx]
+                ->outReqStates,
+            nullptr);
+  ASSERT_NE(
+      serviceState->appContext->registeredServiceStates[serviceIdx]->context,
+      nullptr);
 }
 
 void validateTimeout(uint64_t timeoutTimeNs, uint64_t expectedTimeNs) {
@@ -252,10 +261,10 @@ class TimeoutParamTest : public testing::TestWithParam<ChppMessageType> {
 
   struct ChppAppHeader *GetTimeoutResponse(void) {
     return GetParam() == CHPP_MESSAGE_TYPE_CLIENT_REQUEST
-               ? chppTransportGetClientRequestTimeoutResponse(
-                     &mClientTransportContext)
-               : chppTransportGetServiceRequestTimeoutResponse(
-                     &mServiceTransportContext);
+               ? chppTransportGetRequestTimeoutResponse(
+                     &mClientTransportContext, CHPP_ENDPOINT_CLIENT)
+               : chppTransportGetRequestTimeoutResponse(
+                     &mServiceTransportContext, CHPP_ENDPOINT_SERVICE);
   }
 
   void ValidateRequestState(struct ChppAppHeader *request) {

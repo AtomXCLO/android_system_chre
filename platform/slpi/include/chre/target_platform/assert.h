@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,25 +14,9 @@
  * limitations under the License.
  */
 
-#ifndef CHPP_CLIENTS_TEST_H_
-#define CHPP_CLIENTS_TEST_H_
+#ifndef PLATFORM_SLPI_INCLUDE_CHRE_TARGET_PLATFORM_ASSERT_H
+#define PLATFORM_SLPI_INCLUDE_CHRE_TARGET_PLATFORM_ASSERT_H
 
-#include "chpp/app.h"
-#include "chpp/transport.h"
+#include "chre/platform/shared/assert_func.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/************************************************
- *  Functions necessary for unit testing
- ***********************************************/
-
-struct ChppAppHeader *chppTransportGetRequestTimeoutResponse(
-    struct ChppTransportState *context, enum ChppEndpointType type);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif  // CHPP_CLIENTS_TEST_H_
+#endif // PLATFORM_SLPI_INCLUDE_CHRE_TARGET_PLATFORM_ASSERT_H

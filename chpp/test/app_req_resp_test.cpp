@@ -150,22 +150,11 @@ enum ChppAppErrorCode dispatchRequest(
     case asBaseType(Commands::kError): {
       // Return a response with a CHPP_APP_ERROR_UNSPECIFIED error on kError
       // command.
-      chppTimestampIncomingRequest(&inReqStates[asBaseType(Commands::kError)],
-                                   request);
-
-      struct ChppAppHeader *response =
-          chppAllocResponse(request, sizeof(ChppAppHeader));
-
-      response->error = CHPP_APP_ERROR_UNSPECIFIED;
-
-      chppSendTimestampedResponseOrFail(
-          appState, &inReqStates[asBaseType(Commands::kError)], response,
-          sizeof(ChppAppHeader));
-      return CHPP_APP_ERROR_NONE;
+      return CHPP_APP_ERROR_UNSPECIFIED;
     }
 
     case asBaseType(Commands::kTimeout): {
-      // Do not send a response on kTimeout for the client to timeout.
+      // Do not send a response on kTimeout for the remote endpoint to timeout.
       chppTimestampIncomingRequest(&inReqStates[asBaseType(Commands::kError)],
                                    request);
 
@@ -179,7 +168,7 @@ enum ChppAppErrorCode dispatchRequest(
 
 // Client specific code.
 struct ClientState {
-  struct ChppClientState chppClientState;
+  struct ChppEndpointState chppClientState;
   struct ChppOutgoingRequestState outReqStates[kNumCommands];
   struct ChppIncomingRequestState inReqStates[kNumCommands];
   struct CommonState common;
@@ -249,7 +238,7 @@ void clientDeinit(void *clientState) {
 // Service specific code.
 
 struct ServiceState {
-  struct ChppServiceState chppServiceState;
+  struct ChppEndpointState chppServiceState;
   struct ChppOutgoingRequestState outReqStates[kNumCommands];
   struct ChppIncomingRequestState inReqStates[kNumCommands];
   struct CommonState common;

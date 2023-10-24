@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,9 @@
  * limitations under the License.
  */
 
-#include "chre/platform/tracing.h"
-#include "chre/util/macros.h"
+#ifndef PLATFORM_LINUX_INCLUDE_CHRE_TARGET_PLATFORM_ASSERT_H
+#define PLATFORM_LINUX_INCLUDE_CHRE_TARGET_PLATFORM_ASSERT_H
 
-namespace chre {
+#include "chre/platform/shared/assert_func.h"
 
-void traceRegisterNanoapp(uint16_t instanceId, const char *name) {
-  UNUSED_VAR(instanceId);
-  UNUSED_VAR(name);
-}
-
-void traceNanoappHandleEventStart(uint16_t instanceId, uint16_t eventType) {
-  UNUSED_VAR(instanceId);
-  UNUSED_VAR(eventType);
-}
-
-void traceNanoappHandleEventEnd(uint16_t instanceId) {
-  UNUSED_VAR(instanceId);
-}
-
-}  // namespace chre
+#endif // PLATFORM_LINUX_INCLUDE_CHRE_TARGET_PLATFORM_ASSERT_H

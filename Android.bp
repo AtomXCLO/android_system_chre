@@ -694,7 +694,6 @@ cc_library_static {
         "platform/shared/platform_gnss.cc",
         "platform/shared/platform_wifi.cc",
         "platform/shared/system_time.cc",
-        "platform/shared/tracing.cc",
         "platform/shared/version.cc",
         "platform/shared/sensor_pal/platform_sensor.cc",
         "platform/shared/sensor_pal/platform_sensor_type_helpers.cc",
@@ -748,10 +747,11 @@ cc_defaults {
         "-DCHRE_SENSORS_SUPPORT_ENABLED",
         "-DCHRE_WIFI_SUPPORT_ENABLED",
         "-DCHRE_WIFI_NAN_SUPPORT_ENABLED",
-        "-DCHRE_TEST_WIFI_SCAN_RESULT_TIMEOUT_NS=3000000000",
-        "-DCHRE_TEST_WIFI_RANGING_RESULT_TIMEOUT_NS=3000000000",
-        "-DCHRE_TEST_ASYNC_RESULT_TIMEOUT_NS=3000000000",
+        "-DCHRE_TEST_WIFI_SCAN_RESULT_TIMEOUT_NS=300000000",
+        "-DCHRE_TEST_WIFI_RANGING_RESULT_TIMEOUT_NS=300000000",
+        "-DCHRE_TEST_ASYNC_RESULT_TIMEOUT_NS=300000000",
         "-DCHRE_BLE_READ_RSSI_SUPPORT_ENABLED",
+        "-Wextra-semi",
     ],
 }
 
