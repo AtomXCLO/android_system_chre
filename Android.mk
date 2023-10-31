@@ -97,7 +97,12 @@ LOCAL_SHARED_LIBRARIES := \
     libprotobuf-cpp-lite \
     pixelatoms-cpp \
     android.frameworks.stats-V1-ndk \
-    libbinder_ndk
+    libbinder_ndk \
+    chre_metrics_reporter \
+    server_configurable_flags
+
+LOCAL_STATIC_LIBRARIES := \
+    chre_flags_c_lib
 
 LOCAL_SRC_FILES += $(MSM_SRC_FILES)
 LOCAL_C_INCLUDES += $(MSM_INCLUDES)

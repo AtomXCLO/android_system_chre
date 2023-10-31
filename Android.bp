@@ -83,6 +83,27 @@ cc_library_static {
     cflags: ["-Wall", "-Werror"]
 }
 
+cc_library {
+    name: "chre_metrics_reporter",
+    export_include_dirs: [
+        "host/common/include",
+    ],
+    srcs: [
+        "host/common/metrics_reporter.cc",
+    ],
+    shared_libs: [
+        "android.frameworks.stats-V1-ndk",
+        "chremetrics-cpp",
+        "chre_atoms_log",
+        "libbinder_ndk",
+        "libcutils",
+        "liblog",
+        "libutils",
+    ],
+    vendor: true,
+    cflags: ["-Wall", "-Werror"]
+}
+
 cc_binary {
     name: "chre_test_client",
     vendor: true,
@@ -371,6 +392,40 @@ cc_test_host {
     test_options: {
         unit_test: true,
     },
+}
+
+genrule {
+    name: "chre_atoms_log.h",
+    tools: ["stats-log-api-gen"],
+    cmd: "$(location stats-log-api-gen) --header $(genDir)/chre_atoms_log.h " +
+         "--module chre " +
+         "--namespace android,chre,Atoms ",
+    srcs: [
+        ":libstats_atom_options_protos",
+        ":libprotobuf-internal-descriptor-proto",
+    ],
+    out: [
+        "chre_atoms_log.h",
+    ],
+}
+
+cc_library {
+    name: "chre_atoms_log",
+    vendor: true,
+    generated_headers: ["chre_atoms_log.h"],
+    export_generated_headers: ["chre_atoms_log.h"],
+}
+
+cc_library {
+    name: "chremetrics-cpp",
+    vendor: true,
+    proto: {
+        type: "lite",
+        export_proto_headers: true,
+    },
+    srcs: [
+        "core/chre_metrics.proto",
+    ],
 }
 
 cc_library_headers {
@@ -786,9 +841,12 @@ cc_defaults {
         "libjsoncpp",
         "libutils",
         "liblog",
+        "chre_metrics_reporter",
+        "server_configurable_flags",
     ],
     static_libs: [
         "chre_config_util",
+        "chre_flags_c_lib",
     ]
 }
 
@@ -865,4 +923,16 @@ cc_library_static {
         "liblog",
     ],
     cflags: ["-Wall", "-Werror"]
+}
+
+aconfig_declarations {
+    name: "chre_flags",
+    package: "android.chre.flags",
+    srcs: ["chre_flags.aconfig"],
+}
+
+cc_aconfig_library {
+    name: "chre_flags_c_lib",
+    aconfig_declarations: "chre_flags",
+    vendor: true,
 }

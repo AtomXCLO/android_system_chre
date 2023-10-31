@@ -86,9 +86,9 @@ bool BleRequestManager::updateRequests(BleRequest &&request,
   return success;
 }
 
-bool BleRequestManager::startScanAsync(Nanoapp *nanoapp, chreBleScanMode mode,
-                                       uint32_t reportDelayMs,
-                                       const struct chreBleScanFilter *filter) {
+bool BleRequestManager::startScanAsync(
+    Nanoapp *nanoapp, chreBleScanMode mode, uint32_t reportDelayMs,
+    const struct chreBleScanFilterV1_9 *filter) {
   CHRE_ASSERT(nanoapp);
   BleRequest request(nanoapp->getInstanceId(), true /* enable */, mode,
                      reportDelayMs, filter);
@@ -225,7 +225,7 @@ bool BleRequestManager::controlPlatform() {
   bool enable = bleSettingEnabled() && maxRequest.isEnabled();
 
   if (enable) {
-    chreBleScanFilter filter = maxRequest.getScanFilter();
+    chreBleScanFilterV1_9 filter = maxRequest.getScanFilter();
     success = mPlatformBle.startScanAsync(
         maxRequest.getMode(), maxRequest.getReportDelayMs(), &filter);
     mPendingPlatformRequest =
@@ -269,11 +269,11 @@ void BleRequestManager::handleAdvertisementEvent(
 
 void BleRequestManager::handlePlatformChange(bool enable, uint8_t errorCode) {
   auto callback = [](uint16_t /*type*/, void *data, void *extraData) {
-    bool enable = NestedDataPtr<bool>(data);
-    uint8_t errorCode = NestedDataPtr<uint8_t>(extraData);
+    bool enableCb = NestedDataPtr<bool>(data);
+    uint8_t errorCodeCb = NestedDataPtr<uint8_t>(extraData);
     EventLoopManagerSingleton::get()
         ->getBleRequestManager()
-        .handlePlatformChangeSync(enable, errorCode);
+        .handlePlatformChangeSync(enableCb, errorCodeCb);
   };
 
   EventLoopManagerSingleton::get()->deferCallback(
@@ -692,10 +692,11 @@ void BleRequestManager::logStateToBuffer(DebugDumpWrapper &debugDump) const {
                     log.timestamp.toRawNanoseconds(), log.instanceId,
                     log.enable ? "enable" : "disable\n");
     if (log.enable && log.compliesWithBleSetting) {
-      debugDump.print(" mode=%" PRIu8 " reportDelayMs=%" PRIu32
-                      " rssiThreshold=%" PRId8 " scanCount=%" PRIu8 "\n",
-                      static_cast<uint8_t>(log.mode), log.reportDelayMs,
-                      log.rssiThreshold, log.scanFilterCount);
+      debugDump.print(
+          " mode=%" PRIu8 " reportDelayMs=%" PRIu32 " rssiThreshold=%" PRId8
+          " scanCount=%" PRIu8 " broadcasterAddressCount=%" PRIu8 "\n",
+          static_cast<uint8_t>(log.mode), log.reportDelayMs, log.rssiThreshold,
+          log.scanFilterCount, log.broadcasterFilterCount);
     } else if (log.enable) {
       debugDump.print(" request did not comply with BLE setting\n");
     }

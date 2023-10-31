@@ -74,6 +74,7 @@ static struct ChppTransportHeader *chppAddHeader(
     struct ChppTransportState *context);
 static void chppAddPayload(struct ChppTransportState *context);
 static void chppAddFooter(struct ChppTransportState *context);
+// Can not be static (used in tests).
 size_t chppDequeueTxDatagram(struct ChppTransportState *context);
 static void chppClearTxDatagramQueue(struct ChppTransportState *context);
 static void chppTransportDoWork(struct ChppTransportState *context);
@@ -82,7 +83,7 @@ static void chppAppendToPendingTxPacket(struct ChppTransportState *context,
 static const char *chppGetPacketAttrStr(uint8_t packetCode);
 static bool chppEnqueueTxDatagram(struct ChppTransportState *context,
                                   uint8_t packetCode, void *buf, size_t len);
-enum ChppLinkErrorCode chppSendPendingPacket(
+static enum ChppLinkErrorCode chppSendPendingPacket(
     struct ChppTransportState *context);
 
 static void chppResetTransportContext(struct ChppTransportState *context);
@@ -92,6 +93,7 @@ static void chppReset(struct ChppTransportState *context,
 struct ChppAppHeader *chppTransportGetRequestTimeoutResponse(
     struct ChppTransportState *context, enum ChppEndpointType type);
 static const char *chppGetRxStatusLabel(enum ChppRxState state);
+static void chppWorkHandleTimeout(struct ChppTransportState *context);
 
 /************************************************
  *  Private Functions
@@ -1208,7 +1210,7 @@ static bool chppEnqueueTxDatagram(struct ChppTransportState *context,
  *
  * @return Result of Send().
  */
-enum ChppLinkErrorCode chppSendPendingPacket(
+static enum ChppLinkErrorCode chppSendPendingPacket(
     struct ChppTransportState *context) {
   enum ChppLinkErrorCode error =
       context->linkApi->send(context->linkContext, context->linkBufferSize);
@@ -1648,39 +1650,17 @@ bool chppWorkThreadHandleSignal(struct ChppTransportState *context,
     CHPP_LOGD("CHPP Work Thread terminated");
   } else {
     continueProcessing = true;
-    if (signals & CHPP_TRANSPORT_SIGNAL_EVENT) {
-      chppTransportDoWork(context);
-    }
-
     if (signals == 0) {
-      // Triggered by timeout
-
-      if (chppGetCurrentTimeNs() - context->txStatus.lastTxTimeNs >=
-          CHPP_TRANSPORT_TX_TIMEOUT_NS) {
-        CHPP_LOGE("ACK timeout. Tx t=%" PRIu64,
-                  context->txStatus.lastTxTimeNs / CHPP_NSEC_PER_MSEC);
+      // Triggered by timeout.
+      chppWorkHandleTimeout(context);
+    } else {
+      if (signals & CHPP_TRANSPORT_SIGNAL_EVENT) {
         chppTransportDoWork(context);
       }
-
-      if ((context->resetState == CHPP_RESET_STATE_RESETTING) &&
-          (chppGetCurrentTimeNs() - context->resetTimeNs >=
-           CHPP_TRANSPORT_RESET_TIMEOUT_NS)) {
-        if (context->resetCount + 1 < CHPP_TRANSPORT_MAX_RESET) {
-          CHPP_LOGE("RESET-ACK timeout; retrying");
-          context->resetCount++;
-          chppReset(context, CHPP_TRANSPORT_ATTR_RESET,
-                    CHPP_TRANSPORT_ERROR_TIMEOUT);
-        } else {
-          CHPP_LOGE("RESET-ACK timeout; giving up");
-          context->resetState = CHPP_RESET_STATE_PERMANENT_FAILURE;
-          chppClearTxDatagramQueue(context);
-        }
+      if (signals & CHPP_TRANSPORT_SIGNAL_PLATFORM_MASK) {
+        context->linkApi->doWork(context->linkContext,
+                                 signals & CHPP_TRANSPORT_SIGNAL_PLATFORM_MASK);
       }
-    }
-
-    if (signals & CHPP_TRANSPORT_SIGNAL_PLATFORM_MASK) {
-      context->linkApi->doWork(context->linkContext,
-                               signals & CHPP_TRANSPORT_SIGNAL_PLATFORM_MASK);
     }
   }
 
@@ -1689,6 +1669,55 @@ bool chppWorkThreadHandleSignal(struct ChppTransportState *context,
 #endif
 
   return continueProcessing;
+}
+
+/**
+ * Handle timeouts in the worker thread.
+ *
+ * Timeouts occurs when either:
+ * 1. There are packets to send and last packet send was more than
+ *    CHPP_TRANSPORT_TX_TIMEOUT_NS ago
+ * 2. We haven't received a response to a request in time
+ * 3. We haven't received the reset ACK
+ *
+ * For 1 and 2, chppTransportDoWork should be called to respectively
+ * - Transmit the packet
+ * - Send a timeout response
+ */
+static void chppWorkHandleTimeout(struct ChppTransportState *context) {
+  const uint64_t currentTimeNs = chppGetCurrentTimeNs();
+  const bool isTxTimeout = currentTimeNs - context->txStatus.lastTxTimeNs >=
+                           CHPP_TRANSPORT_TX_TIMEOUT_NS;
+
+  // Call chppTransportDoWork for both TX and request timeouts.
+  if (isTxTimeout) {
+    CHPP_LOGE("ACK timeout. Tx t=%" PRIu64,
+              context->txStatus.lastTxTimeNs / CHPP_NSEC_PER_MSEC);
+    chppTransportDoWork(context);
+  } else {
+    const uint64_t requestTimeoutNs =
+        MIN(context->appContext->nextClientRequestTimeoutNs,
+            context->appContext->nextServiceRequestTimeoutNs);
+    const bool isRequestTimeout = requestTimeoutNs <= currentTimeNs;
+    if (isRequestTimeout) {
+      chppTransportDoWork(context);
+    }
+  }
+
+  if ((context->resetState == CHPP_RESET_STATE_RESETTING) &&
+      (currentTimeNs - context->resetTimeNs >=
+       CHPP_TRANSPORT_RESET_TIMEOUT_NS)) {
+    if (context->resetCount + 1 < CHPP_TRANSPORT_MAX_RESET) {
+      CHPP_LOGE("RESET-ACK timeout; retrying");
+      context->resetCount++;
+      chppReset(context, CHPP_TRANSPORT_ATTR_RESET,
+                CHPP_TRANSPORT_ERROR_TIMEOUT);
+    } else {
+      CHPP_LOGE("RESET-ACK timeout; giving up");
+      context->resetState = CHPP_RESET_STATE_PERMANENT_FAILURE;
+      chppClearTxDatagramQueue(context);
+    }
+  }
 }
 
 void chppWorkThreadStop(struct ChppTransportState *context) {
