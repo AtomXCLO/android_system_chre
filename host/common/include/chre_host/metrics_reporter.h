@@ -25,11 +25,8 @@ namespace android::chre {
 
 class MetricsReporter {
  public:
-  /**
-   * Creates an instance of MetricsReporter or returns nullptr if there was an
-   * exception.
-   */
-  static std::unique_ptr<MetricsReporter> Create();
+  MetricsReporter() = default;
+  ~MetricsReporter() = default;
 
   MetricsReporter(const MetricsReporter &) = delete;
   MetricsReporter &operator=(const MetricsReporter &) = delete;
@@ -60,20 +57,38 @@ class MetricsReporter {
       android::chre::Atoms::ChreHalNanoappLoadFailed::Reason reason);
 
   /**
+   * Reports a PAL open failed metric.
+   *
+   * @return whether the operation was successful.
+   */
+  bool logPalOpenFailed(
+      android::chre::Atoms::ChrePalOpenFailed::ChrePalType pal,
+      android::chre::Atoms::ChrePalOpenFailed::Type type);
+
+  /**
+   * Reports a event queue snapshot reported metric.
+   *
+   * @return whether the operation was successful.
+   */
+  bool logEventQueueSnapshotReported(int32_t snapshotChreGetTimeMs,
+                                     int32_t max_event_queue_size,
+                                     int32_t mean_event_queue_size,
+                                     int32_t num_dropped_events);
+
+  /**
    * Called when the binder dies for the stats service.
    */
   void onBinderDied();
 
  private:
-  static std::shared_ptr<aidl::android::frameworks::stats::IStats>
-  getStatsService(MetricsReporter &metricsReporter);
-
-  MetricsReporter() = default;
-
-  void setStatsService(
-      std::shared_ptr<aidl::android::frameworks::stats::IStats> statsService) {
-    mStatsService = statsService;
-  }
+  /**
+   * Connects to the stats service or return nullptr if it cannot connect.
+   * This also adds a binder death handler to the service that will call
+   * onBinderDied on this.
+   *
+   * @return the stats service
+   */
+  std::shared_ptr<aidl::android::frameworks::stats::IStats> getStatsService();
 
   std::mutex mStatsServiceMutex;
   std::shared_ptr<aidl::android::frameworks::stats::IStats> mStatsService =

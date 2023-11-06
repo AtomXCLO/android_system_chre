@@ -19,6 +19,7 @@
 #include <android/binder_manager.h>
 #include <chre_atoms_log.h>
 #include <chre_host/log.h>
+#include <limits>
 #include <mutex>
 
 namespace android::chre {
@@ -27,42 +28,13 @@ using ::aidl::android::frameworks::stats::IStats;
 using ::aidl::android::frameworks::stats::VendorAtom;
 using ::aidl::android::frameworks::stats::VendorAtomValue;
 using ::android::chre::Atoms::CHRE_AP_WAKE_UP_OCCURRED;
+using ::android::chre::Atoms::CHRE_EVENT_QUEUE_SNAPSHOT_REPORTED;
 using ::android::chre::Atoms::CHRE_HAL_NANOAPP_LOAD_FAILED;
+using ::android::chre::Atoms::CHRE_PAL_OPEN_FAILED;
 using ::android::chre::Atoms::ChreHalNanoappLoadFailed;
+using ::android::chre::Atoms::ChrePalOpenFailed;
 
-namespace {
-void onBinderDiedCallback(void *cookie) {
-  if (cookie == nullptr) {
-    return;
-  }
-
-  MetricsReporter *metricsReporter = static_cast<MetricsReporter *>(cookie);
-  if (metricsReporter == nullptr) {
-    return;
-  }
-
-  metricsReporter->onBinderDied();
-}
-}  // namespace
-
-std::unique_ptr<MetricsReporter> MetricsReporter::Create() {
-  std::unique_ptr<MetricsReporter> metricsReporter(new MetricsReporter());
-  if (metricsReporter == nullptr) {
-    LOGE("Failed to create a MetricsReporter");
-    return nullptr;
-  }
-
-  std::shared_ptr<IStats> statsService = getStatsService(*metricsReporter);
-  if (statsService == nullptr) {
-    return nullptr;
-  }
-
-  metricsReporter->setStatsService(statsService);
-  return metricsReporter;
-}
-
-std::shared_ptr<IStats> MetricsReporter::getStatsService(
-    MetricsReporter &metricsReporter) {
+std::shared_ptr<IStats> MetricsReporter::getStatsService() {
   const std::string statsServiceName =
       std::string(IStats::descriptor).append("/default");
   if (!AServiceManager_isDeclared(statsServiceName.c_str())) {
@@ -78,8 +50,12 @@ std::shared_ptr<IStats> MetricsReporter::getStatsService(
   }
 
   binder_status_t status = AIBinder_linkToDeath(
-      statsServiceBinder.get(),
-      AIBinder_DeathRecipient_new(onBinderDiedCallback), &metricsReporter);
+      statsServiceBinder.get(), AIBinder_DeathRecipient_new([](void *cookie) {
+        MetricsReporter *metricsReporter =
+            static_cast<MetricsReporter *>(cookie);
+        metricsReporter->onBinderDied();
+      }),
+      this);
   if (status != STATUS_OK) {
     LOGE("Failed to link to death the stats service binder");
     return nullptr;
@@ -98,7 +74,10 @@ bool MetricsReporter::reportMetric(const VendorAtom &atom) {
   {
     std::lock_guard<std::mutex> lock(mStatsServiceMutex);
     if (mStatsService == nullptr) {
-      return false;
+      mStatsService = getStatsService();
+      if (mStatsService == nullptr) {
+        return false;
+      }
     }
 
     ret = mStatsService->reportVendorAtom(atom);
@@ -138,10 +117,52 @@ bool MetricsReporter::logNanoappLoadFailed(
   return reportMetric(atom);
 }
 
+bool MetricsReporter::logPalOpenFailed(ChrePalOpenFailed::ChrePalType pal,
+                                       ChrePalOpenFailed::Type type) {
+  std::vector<VendorAtomValue> values(2);
+  values[0].set<VendorAtomValue::intValue>(pal);
+  values[1].set<VendorAtomValue::intValue>(type);
+
+  const VendorAtom atom{
+      .atomId = CHRE_PAL_OPEN_FAILED,
+      .values{std::move(values)},
+  };
+
+  return reportMetric(atom);
+}
+
+bool MetricsReporter::logEventQueueSnapshotReported(
+    int32_t snapshotChreGetTimeMs, int32_t maxEventQueueSize,
+    int32_t meanEventQueueSize, int32_t numDroppedEvents) {
+  std::vector<VendorAtomValue> values(6);
+  values[0].set<VendorAtomValue::intValue>(snapshotChreGetTimeMs);
+  values[1].set<VendorAtomValue::intValue>(maxEventQueueSize);
+  values[2].set<VendorAtomValue::intValue>(meanEventQueueSize);
+  values[3].set<VendorAtomValue::intValue>(numDroppedEvents);
+
+  // TODO(b/298459533): Implement these two values
+  // Last two values are not currently populated and will be implemented
+  // later. To avoid confusion of the interpretation, we use UINT32_MAX
+  // as a placeholder value.
+  values[4].set<VendorAtomValue::longValue>(
+      std::numeric_limits<int64_t>::max());
+  values[5].set<VendorAtomValue::longValue>(
+      std::numeric_limits<int64_t>::max());
+
+  const VendorAtom atom{
+      .atomId = CHRE_EVENT_QUEUE_SNAPSHOT_REPORTED,
+      .values{std::move(values)},
+  };
+
+  return reportMetric(atom);
+}
+
 void MetricsReporter::onBinderDied() {
+  LOGI("MetricsReporter: stats service died - reconnecting");
+
   std::lock_guard<std::mutex> lock(mStatsServiceMutex);
   mStatsService.reset();
-  mStatsService = getStatsService(*this);
+  mStatsService = getStatsService();
 }
 
 }  // namespace android::chre
