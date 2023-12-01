@@ -59,6 +59,7 @@ cc_library_static {
         "host/common/file_stream.cc",
         "host/common/fragmented_load_transaction.cc",
         "host/common/host_protocol_host.cc",
+        "host/common/log.cc",
         "host/common/pigweed/hal_channel_output.cc",
         "host/common/pigweed/hal_rpc_client.cc",
         "host/common/socket_client.cc",
@@ -76,11 +77,12 @@ cc_library_static {
         "-DCHRE_MESSAGE_TO_HOST_MAX_SIZE=4000", // Needed to import CHRE APIs.
         "-Wall",
         "-Werror",
-        ],
+        "-Wthread-safety", // Need to be explicitly set
+    ],
     defaults: [
         "pw_rpc_cflags_chre",
         "pw_rpc_nanopb_lib_dependencies",
-    ]
+    ],
 }
 
 cc_library {
@@ -90,6 +92,7 @@ cc_library {
     ],
     srcs: [
         "host/common/metrics_reporter.cc",
+        "host/common/log.cc",
     ],
     shared_libs: [
         "android.frameworks.stats-V1-ndk",
@@ -120,7 +123,10 @@ cc_binary {
         "liblog",
         "libutils",
     ],
-    static_libs: ["chre_client"],
+    static_libs: [
+        "chre_client",
+        "chre_host_common"
+    ],
 }
 
 genrule {
@@ -233,6 +239,7 @@ cc_binary {
         "liblog",
         "libutils",
     ],
+    static_libs: ["chre_host_common"],
     cflags: ["-Wall", "-Werror", "-fexceptions"],
 }
 
@@ -414,6 +421,30 @@ cc_library_static {
     ],
 }
 
+cc_library_static {
+    name: "chre_host_common",
+    vendor: true,
+    host_supported: true,
+    cpp_std: "c++20",
+    srcs: [
+        "host/common/log.cc",
+    ],
+    local_include_dirs: [
+        "util/include",
+        "host/common/include",
+    ],
+    shared_libs: [
+        "libcutils",
+        "liblog",
+        "libutils",
+    ],
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-DCHRE_IS_HOST_BUILD",
+    ],
+}
+
 cc_test_host {
     name: "hal_unit_tests",
     vendor: true,
@@ -433,6 +464,7 @@ cc_test_host {
     static_libs: [
         "android.hardware.contexthub-V3-ndk",
         "event_logger",
+        "chre_host_common",
         "libgmock",
     ],
     shared_libs: [
@@ -612,8 +644,12 @@ cc_test_host {
         "-DCHRE_MESSAGE_TO_HOST_MAX_SIZE=4096",
         "-DCHRE_MINIMUM_LOG_LEVEL=CHRE_LOG_LEVEL_DEBUG",
         "-DCHRE_ASSERTIONS_ENABLED=true",
+        "-DCHRE_BLE_SUPPORT_ENABLED=true",
         "-DCHRE_FILENAME=__FILE__",
         "-DGTEST",
+    ],
+    header_libs: [
+        "chre_flatbuffers",
     ],
     static_libs: [
         "chre_linux",
