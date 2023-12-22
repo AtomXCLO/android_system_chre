@@ -15,6 +15,7 @@
  */
 
 #include "multi_client_context_hub_base.h"
+
 #include <chre/platform/shared/host_protocol_common.h>
 #include <chre_host/generated/host_messages_generated.h>
 #include <chre_host/log.h>
@@ -94,6 +95,24 @@ inline ScopedAStatus fromResult(bool result) {
                 : fromServiceError(HalError::OPERATION_FAILED);
 }
 }  // anonymous namespace
+
+MultiClientContextHubBase::MultiClientContextHubBase() {
+  mDeathRecipient = ndk::ScopedAIBinder_DeathRecipient(
+      AIBinder_DeathRecipient_new(onClientDied));
+  AIBinder_DeathRecipient_setOnUnlinked(
+      mDeathRecipient.get(), /*onUnlinked= */ [](void *cookie) {
+        LOGI("Callback is unlinked. Releasing the death recipient cookie.");
+        delete static_cast<HalDeathRecipientCookie *>(cookie);
+      });
+  mDeadClientUnlinker =
+      [&deathRecipient = mDeathRecipient](
+          const std::shared_ptr<IContextHubCallback> &callback,
+          void *deathRecipientCookie) {
+        return AIBinder_unlinkToDeath(callback->asBinder().get(),
+                                      deathRecipient.get(),
+                                      deathRecipientCookie) == STATUS_OK;
+      };
+}
 
 ScopedAStatus MultiClientContextHubBase::getContextHubs(
     std::vector<ContextHubInfo> *contextHubInfos) {
@@ -392,6 +411,13 @@ ScopedAStatus MultiClientContextHubBase::setTestMode(bool enable) {
   return fromResult(enable ? enableTestMode() : disableTestMode());
 }
 
+ScopedAStatus MultiClientContextHubBase::sendMessageDeliveryStatusToHub(
+    int32_t /* contextHubId */,
+    const MessageDeliveryStatus & /* messageDeliveryStatus */) {
+  // TODO(b/312417087): Implement reliable message support - transaction status
+  return ndk::ScopedAStatus::ok();
+}
+
 bool MultiClientContextHubBase::enableTestMode() {
   std::unique_lock<std::mutex> lock(mTestModeMutex);
   if (mIsTestModeEnabled) {
@@ -466,6 +492,14 @@ void MultiClientContextHubBase::handleMessageFromChre(
       onNanoappLoadResponse(*message.AsLoadNanoappResponse(), clientId);
       break;
     }
+    case fbs::ChreMessage::TimeSyncRequest: {
+      if (mConnection->isTimeSyncNeeded()) {
+        TimeSyncer::sendTimeSync(mConnection.get());
+      } else {
+        LOGW("Received an unexpected time sync request from CHRE.");
+      }
+      break;
+    }
     case fbs::ChreMessage::UnloadNanoappResponse: {
       onNanoappUnloadResponse(*message.AsUnloadNanoappResponse(), clientId);
       break;
@@ -504,6 +538,9 @@ void MultiClientContextHubBase::handleHubInfoResponse(
   mContextHubInfo->chreApiMinorVersion = extractChreApiMinorVersion(version);
   mContextHubInfo->chrePatchVersion = extractChrePatchVersion(version);
   mContextHubInfo->supportedPermissions = kSupportedPermissions;
+
+  // TODO(b/312417087): Implement reliable message support
+  mContextHubInfo->supportsReliableMessages = false;
   mHubInfoCondition.notify_all();
 }
 
