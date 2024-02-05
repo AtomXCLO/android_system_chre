@@ -151,11 +151,12 @@ void Manager::handleDataMessage(const chreMessageFromHostData *hostData) {
 
 void Manager::handleWifiScanResult(const chreWifiScanEvent *event) {
   for (uint8_t i = 0; i < event->resultCount; i++) {
-    mChreScanResults[mChreScanResultsI++] = WifiScanResult(event->results[i]);
+    mChreScanResults[mNextChreScanResultIndex++] =
+        WifiScanResult(event->results[i]);
   }
   mNumResultsProcessed += event->resultCount;
   if (mNumResultsProcessed >= event->resultTotal) {
-    mChreScanResultsSize = mChreScanResultsI;
+    mChreScanResultsSize = mNextChreScanResultIndex;
     mChreDataCollectionDone = true;
     if (mApDataCollectionDone) {
       compareAndSendResultToHost();
@@ -169,17 +170,22 @@ void Manager::compareAndSendResultToHost() {
                            (mApScanResultsSize != mChreScanResultsSize);
   bool aboveMaxSizeCheck = (mApScanResultsSize > mMaxChreResultSize) &&
                            (mApScanResultsSize < mChreScanResultsSize);
-  // TODO(b/185188753): Log info about all scan results so that it is easier
-  // to figure out which AP or CHRE scan results are missing or corrupted.
+
   if (belowMaxSizeCheck || aboveMaxSizeCheck) {
+    LOGE("AP and CHRE wifi scan result counts differ, AP = %" PRIu8
+         ", CHRE = %" PRIu8 ", MAX = %" PRIu8,
+         mApScanResultsSize, mChreScanResultsSize, mMaxChreResultSize);
+    for (uint16_t i = 0; i < mChreScanResultsSize; i++) {
+      LOGE("CHRE[%u]: %s", i, mChreScanResults[i].getSsid());
+    }
+    for (uint16_t i = 0; i < mApScanResultsSize; i++) {
+      LOGE("AP[%u]: %s", i, mApScanResults[i].getSsid());
+    }
     test_shared::sendTestResultWithMsgToHost(
         mCrossValidatorState.hostEndpoint,
         chre_cross_validation_wifi_MessageType_STEP_RESULT, false /*success*/,
         "There is a different number of AP and CHRE scan results.",
         false /*abortOnFailure*/);
-    LOGE("AP and CHRE wifi scan result counts differ, AP = %" PRIu8
-         ", CHRE = %" PRIu8,
-         mApScanResultsSize, mChreScanResultsSize);
 
     return;
   }
