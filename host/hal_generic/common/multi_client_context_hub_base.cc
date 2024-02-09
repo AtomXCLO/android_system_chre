@@ -28,6 +28,7 @@
 
 namespace android::hardware::contexthub::common::implementation {
 
+using ::android::base::WriteStringToFd;
 using ::android::chre::FragmentedLoadTransaction;
 using ::android::chre::getStringFromByteVector;
 using ::ndk::ScopedAStatus;
@@ -516,6 +517,11 @@ void MultiClientContextHubBase::handleMessageFromChre(
       onDebugDumpComplete(*message.AsDebugDumpResponse());
       break;
     }
+    case fbs::ChreMessage::NanoappInstanceIdInfo: {
+      // TODO(b/242760291): Map nanoapp log detokenizers to instance IDs in the
+      //  log message parser.
+      break;
+    }
     default:
       LOGW("Got unexpected message type %" PRIu8,
            static_cast<uint8_t>(message.type));
@@ -728,8 +734,16 @@ void MultiClientContextHubBase::onChreRestarted() {
 binder_status_t MultiClientContextHubBase::dump(int fd,
                                                 const char ** /* args */,
                                                 uint32_t /* numArgs */) {
-  // debugDumpStart waits for the dump to finish before returning.
+  // Dump of CHRE debug data. It waits for the dump to finish before returning.
   debugDumpStart(fd);
+
+  // Dump debug info of HalClientManager.
+  std::string dumpOfHalClientManager = mHalClientManager->debugDump();
+  if (!WriteStringToFd(dumpOfHalClientManager, fd)) {
+    LOGW("Failed to write debug dump of HalClientManager. Size: %zu.",
+         dumpOfHalClientManager.size());
+  }
+
   return STATUS_OK;
 }
 
@@ -740,7 +754,7 @@ bool MultiClientContextHubBase::requestDebugDump() {
 }
 
 void MultiClientContextHubBase::writeToDebugFile(const char *str) {
-  if (!::android::base::WriteStringToFd(std::string(str), getDebugFd())) {
+  if (!WriteStringToFd(std::string(str), getDebugFd())) {
     LOGW("Failed to write %zu bytes to debug dump fd", strlen(str));
   }
 }
