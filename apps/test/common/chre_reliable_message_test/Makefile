@@ -1,5 +1,5 @@
 #
-# CHRE Cross Validator WiFi Nanoapp Makefile
+# CHRE Reliable Message Test Nanoapp Makefile
 #
 # Environment Checks ###########################################################
 ifeq ($(CHRE_PREFIX),)
@@ -14,47 +14,39 @@ endif
 
 # Nanoapp Configuration ########################################################
 
-NANOAPP_NAME = chre_cross_validator_wifi
-NANOAPP_ID = 0x476f6f6754000005
-NANOAPP_NAME_STRING = \"CHRE\ Cross\ Validator\ WiFi\"
+NANOAPP_NAME = chre_reliable_message_test
+NANOAPP_ID = 0x476f6f6754000010
+NANOAPP_NAME_STRING = \"CHRE\ Reliable\ Message\ Test\"
 NANOAPP_VERSION = 0x00000001
 
-NANOAPP_PATH = $(CHRE_PREFIX)/apps/test/common/chre_cross_validator_wifi
+NANOAPP_PATH = $(CHRE_PREFIX)/apps/test/common/chre_reliable_message_test
 TEST_SHARED_PATH = $(CHRE_PREFIX)/apps/test/common/shared
 
+# Source Code ##################################################################
+
+COMMON_SRCS += $(NANOAPP_PATH)/src/chre_reliable_message_test.cc
+COMMON_SRCS += $(NANOAPP_PATH)/src/chre_reliable_message_test_manager.cc
+
+COMMON_SRCS += $(TEST_SHARED_PATH)/src/send_message.cc
+COMMON_SRCS += $(CHRE_PREFIX)/util/nanoapp/callbacks.cc
 
 # Protobuf Sources #############################################################
 
 NANOPB_EXTENSION = nanopb
-
-NANOPB_SRCS += $(NANOAPP_PATH)/../proto/chre_cross_validation_wifi.proto
 NANOPB_SRCS += $(NANOAPP_PATH)/../proto/chre_test_common.proto
+NANOPB_SRCS += $(NANOAPP_PATH)/../proto/chre_reliable_message_test.proto
 NANOPB_INCLUDES = $(NANOAPP_PATH)/../proto
-
-# Source Code ##################################################################
-
-COMMON_SRCS += $(NANOAPP_PATH)/src/chre_cross_validator_wifi.cc
-COMMON_SRCS += $(NANOAPP_PATH)/src/chre_cross_validator_wifi_manager.cc
-COMMON_SRCS += $(NANOAPP_PATH)/src/wifi_scan_result.cc
-COMMON_SRCS += $(TEST_SHARED_PATH)/src/send_message.cc
-COMMON_SRCS += $(CHRE_PREFIX)/util/dynamic_vector_base.cc
-COMMON_SRCS += $(CHRE_PREFIX)/util/nanoapp/callbacks.cc
-COMMON_SRCS += $(CHRE_PREFIX)/util/nanoapp/wifi.cc
 
 # Compiler Flags ###############################################################
 
 # Defines
 COMMON_CFLAGS += -DNANOAPP_MINIMUM_LOG_LEVEL=CHRE_LOG_LEVEL_INFO
-COMMON_CFLAGS += -DLOG_TAG=\"[ChreCrossValidatorWifi]\"
 COMMON_CFLAGS += -DCHRE_ASSERTIONS_ENABLED
+COMMON_CFLAGS += -DLOG_TAG=\"[ReliableMessageTest]\"
 
 # Includes
-COMMON_CFLAGS += -I$(NANOAPP_PATH)/inc
 COMMON_CFLAGS += -I$(TEST_SHARED_PATH)/inc
-
-# Permission declarations ######################################################
-
-CHRE_NANOAPP_USES_WIFI = true
+COMMON_CFLAGS += -I$(NANOAPP_PATH)/inc
 
 # Makefile Includes ############################################################
 
