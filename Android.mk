@@ -96,7 +96,7 @@ LOCAL_SHARED_LIBRARIES := \
     libpower \
     libprotobuf-cpp-lite \
     pixelatoms-cpp \
-    android.frameworks.stats-V1-ndk \
+    android.frameworks.stats-V2-ndk \
     libbinder_ndk \
     chre_metrics_reporter \
     server_configurable_flags
