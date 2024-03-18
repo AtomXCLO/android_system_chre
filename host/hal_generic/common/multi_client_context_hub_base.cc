@@ -22,9 +22,11 @@
 #include "chre/event.h"
 #include "chre_host/config_util.h"
 #include "chre_host/fragmented_load_transaction.h"
+#include "chre_host/hal_error.h"
 #include "chre_host/host_protocol_host.h"
-#include "hal_error.h"
 #include "permissions_util.h"
+
+#include <system/chre/core/chre_metrics.pb.h>
 
 namespace android::hardware::contexthub::common::implementation {
 
@@ -41,6 +43,9 @@ constexpr uint32_t kDefaultHubId = 0;
 constexpr auto kHubInfoQueryTimeout = std::chrono::seconds(5);
 // timeout for enable/disable test mode, which is synchronous
 constexpr std::chrono::duration ktestModeTimeOut = std::chrono::seconds(5);
+
+// The transaction id for synchronously load/unload a nanoapp in test mode.
+constexpr int32_t kTestModeTransactionId{static_cast<int32_t>(0x80000000)};
 
 bool isValidContextHubId(uint32_t hubId) {
   if (hubId != kDefaultHubId) {
@@ -113,6 +118,7 @@ MultiClientContextHubBase::MultiClientContextHubBase() {
                                       deathRecipient.get(),
                                       deathRecipientCookie) == STATUS_OK;
       };
+  mLogger.init();
 }
 
 ScopedAStatus MultiClientContextHubBase::getContextHubs(
@@ -190,7 +196,8 @@ ScopedAStatus MultiClientContextHubBase::unloadNanoapp(int32_t contextHubId,
     return ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
   }
   pid_t pid = AIBinder_getCallingPid();
-  if (!mHalClientManager->registerPendingUnloadTransaction(pid,
+  if (transactionId != kTestModeTransactionId &&
+      !mHalClientManager->registerPendingUnloadTransaction(pid,
                                                            transactionId)) {
     return fromResult(false);
   }
@@ -409,7 +416,11 @@ ScopedAStatus MultiClientContextHubBase::onNanSessionStateChanged(
 }
 
 ScopedAStatus MultiClientContextHubBase::setTestMode(bool enable) {
-  return fromResult(enable ? enableTestMode() : disableTestMode());
+  if (enable) {
+    return fromResult(enableTestMode());
+  }
+  disableTestMode();
+  return ScopedAStatus::ok();
 }
 
 ScopedAStatus MultiClientContextHubBase::sendMessageDeliveryStatusToHub(
@@ -424,49 +435,69 @@ bool MultiClientContextHubBase::enableTestMode() {
   if (mIsTestModeEnabled) {
     return true;
   }
+
+  // Pulling out a list of loaded nanoapps.
   mTestModeNanoapps.reset();
   if (!queryNanoapps(kDefaultHubId).isOk()) {
-    LOGE("Failed to get a list of loaded nanoapps.");
+    LOGE("Failed to get a list of loaded nanoapps to enable test mode");
     mTestModeNanoapps.emplace();
     return false;
   }
-  mEnableTestModeCv.wait_for(lock, ktestModeTimeOut,
-                             [&]() { return mTestModeNanoapps.has_value(); });
-  for (const auto &appId : *mTestModeNanoapps) {
-    if (!unloadNanoapp(kDefaultHubId, appId, mTestModeTransactionId).isOk()) {
-      LOGE("Failed to unload nanoapp 0x%" PRIx64 " to enable the test mode.",
+  if (!mEnableTestModeCv.wait_for(lock, ktestModeTimeOut, [&]() {
+        return mTestModeNanoapps.has_value() &&
+               mTestModeSystemNanoapps.has_value();
+      })) {
+    LOGE("Failed to get a list of loaded nanoapps within %" PRIu64
+         " seconds to enable test mode",
+         ktestModeTimeOut.count());
+    mTestModeNanoapps.emplace();
+    return false;
+  }
+
+  // Unload each nanoapp.
+  // mTestModeNanoapps tracks nanoapps that are actually unloaded. Removing an
+  // element from std::vector is O(n) but such a removal should rarely happen.
+  LOGI("Trying to unload %" PRIu64 " nanoapps to enable test mode",
+       mTestModeNanoapps->size());
+  for (auto iter = mTestModeNanoapps->begin();
+       iter != mTestModeNanoapps->end();) {
+    uint64_t appId = *iter;
+    if (!unloadNanoapp(kDefaultHubId, appId, kTestModeTransactionId).isOk()) {
+      LOGW("Failed to request to unload nanoapp 0x%" PRIx64
+           " to enable test mode",
            appId);
-      return false;
+      iter = mTestModeNanoapps->erase(iter);
+      continue;
     }
     mTestModeSyncUnloadResult.reset();
     mEnableTestModeCv.wait_for(lock, ktestModeTimeOut, [&]() {
       return mTestModeSyncUnloadResult.has_value();
     });
     if (!*mTestModeSyncUnloadResult) {
-      LOGE("Failed to unload nanoapp 0x%" PRIx64 " to enable the test mode.",
-           appId);
-      return false;
+      LOGW("Failed to unload nanoapp 0x%" PRIx64 " to enable test mode", appId);
+      iter = mTestModeNanoapps->erase(iter);
+      continue;
     }
+    iter++;
   }
+  LOGI("%" PRIu64 " nanoapps are unloaded to enable test mode",
+       mTestModeNanoapps->size());
+
   mIsTestModeEnabled = true;
+  mTestModeNanoapps.emplace();
   return true;
 }
 
-bool MultiClientContextHubBase::disableTestMode() {
+void MultiClientContextHubBase::disableTestMode() {
   std::unique_lock<std::mutex> lock(mTestModeMutex);
   if (!mIsTestModeEnabled) {
-    return true;
+    return;
   }
-  if (mTestModeNanoapps.has_value() && !mTestModeNanoapps->empty()) {
-    if (!mPreloadedNanoappLoader->loadPreloadedNanoapps(*mTestModeNanoapps)) {
-      LOGE("Failed to reload the nanoapps to disable the test mode.");
-      return false;
-    }
-  }
-  mTestModeNanoapps.emplace();
-  mTestModeTransactionId = static_cast<int32_t>(kDefaultTestModeTransactionId);
+  int numOfNanoappsLoaded =
+      mPreloadedNanoappLoader->loadPreloadedNanoapps(mTestModeSystemNanoapps);
+  LOGI("%d nanoapps are reloaded to recover from test mode",
+       numOfNanoappsLoaded);
   mIsTestModeEnabled = false;
-  return true;
 }
 
 void MultiClientContextHubBase::handleMessageFromChre(
@@ -517,7 +548,19 @@ void MultiClientContextHubBase::handleMessageFromChre(
       onDebugDumpComplete(*message.AsDebugDumpResponse());
       break;
     }
-    case fbs::ChreMessage::NanoappInstanceIdInfo: {
+    case fbs::ChreMessage::LogMessageV2: {
+      const chre::fbs::LogMessageV2T *logMessage = message.AsLogMessageV2();
+      const std::vector<int8_t> &buffer = logMessage->buffer;
+      auto logData = reinterpret_cast<const uint8_t *>(buffer.data());
+      uint32_t numLogsDropped = logMessage->num_logs_dropped;
+      mLogger.logV2(logData, buffer.size(), numLogsDropped);
+      break;
+    }
+    case fbs::ChreMessage::MetricLog: {
+      onMetricLog(*message.AsMetricLog());
+      break;
+    }
+    case fbs::ChreMessage::NanoappTokenDatabaseInfo: {
       // TODO(b/242760291): Map nanoapp log detokenizers to instance IDs in the
       //  log message parser.
       break;
@@ -572,14 +615,31 @@ void MultiClientContextHubBase::onDebugDumpComplete(
 
 void MultiClientContextHubBase::onNanoappListResponse(
     const fbs::NanoappListResponseT &response, HalClientId clientId) {
+  {
+    std::unique_lock<std::mutex> lock(mTestModeMutex);
+    if (!mTestModeNanoapps.has_value()) {
+      mTestModeNanoapps.emplace();
+      mTestModeSystemNanoapps.emplace();
+      for (const auto &nanoapp : response.nanoapps) {
+        if (nanoapp->is_system) {
+          mTestModeSystemNanoapps->push_back(nanoapp->app_id);
+        } else {
+          mTestModeNanoapps->push_back(nanoapp->app_id);
+        }
+      }
+      mEnableTestModeCv.notify_all();
+    }
+  }
+
   std::shared_ptr<IContextHubCallback> callback =
       mHalClientManager->getCallback(clientId);
   if (callback == nullptr) {
     return;
   }
+
   std::vector<NanoappInfo> appInfoList;
   for (const auto &nanoapp : response.nanoapps) {
-    if (nanoapp == nullptr || nanoapp->is_system) {
+    if (nanoapp->is_system) {
       continue;
     }
     NanoappInfo appInfo;
@@ -597,16 +657,6 @@ void MultiClientContextHubBase::onNanoappListResponse(
     }
     appInfo.rpcServices = rpcServices;
     appInfoList.push_back(appInfo);
-  }
-  {
-    std::unique_lock<std::mutex> lock(mTestModeMutex);
-    if (!mTestModeNanoapps.has_value()) {
-      mTestModeNanoapps.emplace();
-      for (const auto &appInfo : appInfoList) {
-        mTestModeNanoapps->insert(appInfo.nanoappId);
-      }
-      mEnableTestModeCv.notify_all();
-    }
   }
 
   callback->handleNanoappInfo(appInfoList);
@@ -661,16 +711,14 @@ void MultiClientContextHubBase::onNanoappLoadResponse(
 
 void MultiClientContextHubBase::onNanoappUnloadResponse(
     const fbs::UnloadNanoappResponseT &response, HalClientId clientId) {
+  if (response.transaction_id == kTestModeTransactionId) {
+    std::unique_lock<std::mutex> lock(mTestModeMutex);
+    mTestModeSyncUnloadResult.emplace(response.success);
+    mEnableTestModeCv.notify_all();
+    return;
+  }
   if (mHalClientManager->resetPendingUnloadTransaction(
           clientId, response.transaction_id)) {
-    {
-      std::unique_lock<std::mutex> lock(mTestModeMutex);
-      if (response.transaction_id == mTestModeTransactionId) {
-        mTestModeSyncUnloadResult.emplace(response.success);
-        mEnableTestModeCv.notify_all();
-        return;
-      }
-    }
     if (auto callback = mHalClientManager->getCallback(clientId);
         callback != nullptr) {
       callback->handleTransactionResult(response.transaction_id,
@@ -744,6 +792,21 @@ binder_status_t MultiClientContextHubBase::dump(int fd,
          dumpOfHalClientManager.size());
   }
 
+  // Dump the status of test mode
+  std::ostringstream testModeDump;
+  testModeDump << "\n-- HAL Test Mode Status --\n\n";
+  {
+    std::lock_guard<std::mutex> lockGuard(mTestModeMutex);
+    testModeDump << (mIsTestModeEnabled ? "Enabled" : "Disabled") << "\n";
+    if (!mTestModeNanoapps.has_value()) {
+      testModeDump << "\nError: Nanoapp list is left unset\n";
+    }
+  }
+  testModeDump << "\n-- End of HAL Test Mode Status --\n";
+  if (!WriteStringToFd(testModeDump.str(), fd)) {
+    LOGW("Failed to write test mode dump");
+  }
+
   return STATUS_OK;
 }
 
@@ -757,5 +820,46 @@ void MultiClientContextHubBase::writeToDebugFile(const char *str) {
   if (!WriteStringToFd(std::string(str), getDebugFd())) {
     LOGW("Failed to write %zu bytes to debug dump fd", strlen(str));
   }
+}
+
+void MultiClientContextHubBase::onMetricLog(
+    const ::chre::fbs::MetricLogT &metricMessage) {
+  using ::android::chre::Atoms::ChrePalOpenFailed;
+
+  const std::vector<int8_t> &encodedMetric = metricMessage.encoded_metric;
+  auto metricSize = static_cast<int>(encodedMetric.size());
+
+  switch (metricMessage.id) {
+    case Atoms::CHRE_PAL_OPEN_FAILED: {
+      metrics::ChrePalOpenFailed metric;
+      if (!metric.ParseFromArray(encodedMetric.data(), metricSize)) {
+        break;
+      }
+      auto pal = static_cast<ChrePalOpenFailed::ChrePalType>(metric.pal());
+      auto type = static_cast<ChrePalOpenFailed::Type>(metric.type());
+      if (!mMetricsReporter.logPalOpenFailed(pal, type)) {
+        LOGE("Could not log the PAL open failed metric");
+      }
+      return;
+    }
+    case Atoms::CHRE_EVENT_QUEUE_SNAPSHOT_REPORTED: {
+      metrics::ChreEventQueueSnapshotReported metric;
+      if (!metric.ParseFromArray(encodedMetric.data(), metricSize)) {
+        break;
+      }
+      if (!mMetricsReporter.logEventQueueSnapshotReported(
+              metric.snapshot_chre_get_time_ms(), metric.max_event_queue_size(),
+              metric.mean_event_queue_size(), metric.num_dropped_events())) {
+        LOGE("Could not log the event queue snapshot metric");
+      }
+      return;
+    }
+    default: {
+      LOGW("Unknown metric ID %" PRIu32, metricMessage.id);
+      return;
+    }
+  }
+  // Reached here only if an error has occurred for a known metric id.
+  LOGE("Failed to parse metric data with id %" PRIu32, metricMessage.id);
 }
 }  // namespace android::hardware::contexthub::common::implementation
