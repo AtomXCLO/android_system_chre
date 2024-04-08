@@ -40,7 +40,7 @@ using ::ndk::ScopedAStatus;
 /**
  * The base class of multiclient HAL.
  *
- * A subclass should initiate mConnection, mHalClientManager and
+ * <p>A subclass should initiate mConnection, mHalClientManager and
  * mPreloadedNanoappLoader in its constructor.
  */
 class MultiClientContextHubBase
@@ -54,7 +54,7 @@ class MultiClientContextHubBase
 
   MultiClientContextHubBase();
 
-  // functions implementing IContextHub
+  // Functions implementing IContextHub.
   ScopedAStatus getContextHubs(
       std::vector<ContextHubInfo> *contextHubInfos) override;
   ScopedAStatus loadNanoapp(int32_t contextHubId,
@@ -84,12 +84,12 @@ class MultiClientContextHubBase
       int32_t contextHubId,
       const MessageDeliveryStatus &messageDeliveryStatus) override;
 
-  // The callback function implementing ChreConnectionCallback
+  // Functions implementing ChreConnectionCallback.
   void handleMessageFromChre(const unsigned char *messageBuffer,
                              size_t messageLen) override;
   void onChreRestarted() override;
 
-  // The functions for dumping debug information
+  // Functions for dumping debug information.
   binder_status_t dump(int fd, const char **args, uint32_t numArgs) override;
   bool requestDebugDump() override;
   void writeToDebugFile(const char *str) override;
@@ -125,11 +125,22 @@ class MultiClientContextHubBase
       const ::chre::fbs::UnloadNanoappResponseT &response,
       HalClientId clientId);
   void onNanoappMessage(const ::chre::fbs::NanoappMessageT &message);
+  void onMessageDeliveryStatus(
+      const ::chre::fbs::MessageDeliveryStatusT &status);
   void onDebugDumpData(const ::chre::fbs::DebugDumpDataT &data);
   void onDebugDumpComplete(
       const ::chre::fbs::DebugDumpResponseT & /* response */);
-  virtual void onMetricLog(const ::chre::fbs::MetricLogT &metricMessage);
+  void onMetricLog(const ::chre::fbs::MetricLogT &metricMessage);
   void handleClientDeath(pid_t pid);
+
+  /**
+   * Returns true to allow metrics to be reported to stats service.
+   *
+   * <p>Subclasses can override to turn it off.
+   */
+  virtual bool isMetricEnabled() {
+    return true;
+  }
 
   /**
    * Enables test mode by unloading all the nanoapps except the system nanoapps.
@@ -201,6 +212,9 @@ class MultiClientContextHubBase
   LogMessageParser mLogger;
 
   MetricsReporter mMetricsReporter;
+
+  // Used to map message sequence number to host endpoint ID
+  std::unordered_map<int32_t, HostEndpointId> mReliableMessageMap;
 };
 }  // namespace android::hardware::contexthub::common::implementation
 #endif  // ANDROID_HARDWARE_CONTEXTHUB_COMMON_MULTICLIENTS_HAL_BASE_H_

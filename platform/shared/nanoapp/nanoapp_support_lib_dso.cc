@@ -23,7 +23,6 @@
 
 #include <algorithm>
 
-#include "chre/util/nanoapp/log.h"
 #include "chre_api/chre.h"
 #include "chre_nsl_internal/platform/shared/debug_dump.h"
 #include "chre_nsl_internal/util/macros.h"
@@ -204,9 +203,13 @@ const struct chreNslNanoappInfo *getChreNslDsoNanoappInfo() {
 // be avoided at the expense of a nanoapp not being able to load at all on prior
 // implementations.
 
-#if !defined(CHRE_NANOAPP_DISABLE_BACKCOMPAT) && \
-    defined(CHRE_FIRST_SUPPORTED_API_VERSION) && \
-    CHRE_FIRST_SUPPORTED_API_VERSION >= CHRE_API_VERSION_1_1
+#if !defined(CHRE_NANOAPP_DISABLE_BACKCOMPAT)
+
+#if !defined(CHRE_FIRST_SUPPORTED_API_VERSION)
+#error "CHRE_FIRST_SUPPORTED_API_VERSION must be defined for this platform"
+#elif CHRE_FIRST_SUPPORTED_API_VERSION < CHRE_API_VERSION_1_1
+#error "CHRE_FIRST_SUPPORTED_API_VERSION must be at least CHRE_API_VERSION_1_1"
+#endif  // !defined(CHRE_FIRST_SUPPORTED_API_VERSION)
 
 #include <dlfcn.h>
 
@@ -316,7 +319,7 @@ bool chreBleStartScanAsync(chreBleScanMode mode, uint32_t reportDelayMs,
   auto genericFilters = static_cast<chreBleGenericFilter *>(
       chreHeapAlloc(sizeof(chreBleGenericFilter) * filter->scanFilterCount));
   if (genericFilters == nullptr) {
-    LOG_OOM();
+    chreLog(CHRE_LOG_ERROR, "Alloc failure in chreBleStartScanAsync NSL");
     return false;
   }
   memcpy(genericFilters, filter->scanFilters,
@@ -329,7 +332,7 @@ bool chreBleStartScanAsync(chreBleScanMode mode, uint32_t reportDelayMs,
   chreHeapFree(const_cast<chreBleGenericFilter *>(convertedFilter.scanFilters));
   return success;
 }
-#endif /* CRE_FIRST_SUPPORTED_API_VERSION < CHRE_API_VERSION_1_8 */
+#endif /* CHRE_FIRST_SUPPORTED_API_VERSION < CHRE_API_VERSION_1_8 */
 
 #if CHRE_FIRST_SUPPORTED_API_VERSION < CHRE_API_VERSION_1_9
 WEAK_SYMBOL
@@ -665,6 +668,4 @@ uint32_t chreGetMessageToHostMaxSize() {
 }
 #endif /* CHRE_FIRST_SUPPORTED_API_VERSION < CHRE_API_VERSION_1_10 */
 
-#endif  // !defined(CHRE_NANOAPP_DISABLE_BACKCOMPAT) &&
-        // defined(CHRE_FIRST_SUPPORTED_API_VERSION) &&
-        // CHRE_FIRST_SUPPORTED_API_VERSION >= CHRE_API_VERSION_1_1
+#endif  // !defined(CHRE_NANOAPP_DISABLE_BACKCOMPAT)
