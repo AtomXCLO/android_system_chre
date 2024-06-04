@@ -24,9 +24,8 @@
 #include "chre/platform/assert.h"
 #include "chre/platform/context.h"
 #include "chre/platform/host_link.h"
-#include "chre/util/lock_guard.h"
 #include "chre/util/macros.h"
-#include "chre/util/optional.h"
+#include "chre/util/nested_data_ptr.h"
 #include "chre/util/system/event_callbacks.h"
 #include "chre_api/chre.h"
 
@@ -81,7 +80,7 @@ HostCommsManager::HostCommsManager()
     : mTransactionManager(sendMessageWithTransactionData,
                           onMessageDeliveryStatus, deferCallback,
                           deferCancelCallback, kReliableMessageRetryWaitTime,
-                          /* maxNumRetries= */ 0)
+                          kReliableMessageNumRetries)
 #endif  // CHRE_RELIABLE_MESSAGE_SUPPORT_ENABLED
     {}
 
@@ -460,7 +459,7 @@ void HostCommsManager::onMessageToHostCompleteInternal(
   if (msgToHost->toHostData.nanoappFreeFunction == nullptr) {
     mMessagePool.deallocate(msgToHost);
   } else if (inEventLoopThread()) {
-    // If we're already within the event pool context, it is safe to call the
+    // If we're already within the event loop context, it is safe to call the
     // free callback synchronously.
     EventLoopManagerSingleton::get()->getHostCommsManager().freeMessageToHost(
         msgToHost);

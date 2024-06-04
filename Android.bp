@@ -101,7 +101,7 @@ cc_library_static {
     ],
 }
 
-cc_library {
+cc_library_static {
     name: "chre_metrics_reporter",
     export_include_dirs: [
         "host/common/include",
@@ -531,7 +531,9 @@ cc_test_host {
         "pw_detokenizer",
     ],
     shared_libs: [
+        "android.frameworks.stats-V2-ndk",
         "android.hardware.contexthub-V3-ndk",
+        "chre_atoms_log",
         "libbase",
         "libbinder_ndk",
         "libcutils",
@@ -578,6 +580,7 @@ genrule {
 cc_library {
     name: "chre_atoms_log",
     vendor: true,
+    host_supported: true,
     generated_headers: ["chre_atoms_log.h"],
     export_generated_headers: ["chre_atoms_log.h"],
 }
@@ -1022,7 +1025,6 @@ cc_defaults {
         "platform/shared/host_protocol_common.cc",
     ],
     shared_libs: [
-        "chre_metrics_reporter",
         "libbase",
         "libbinder_ndk",
         "libcutils",
@@ -1034,6 +1036,7 @@ cc_defaults {
     static_libs: [
         "chre_config_util",
         "chre_flags_c_lib",
+        "chre_metrics_reporter",
     ],
 }
 
