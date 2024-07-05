@@ -541,6 +541,7 @@ cc_test_host {
         "liblog",
         "libutils",
         "server_configurable_flags",
+        "libaconfig_storage_read_api_cc",
     ],
     header_libs: [
         "chre_api",
@@ -997,6 +998,7 @@ cc_defaults {
         "-DCHRE_WIFI_SUPPORT_ENABLED",
         "-DGTEST",
         "-Wextra-semi",
+        "-Wvla-extension",
     ],
 }
 
@@ -1032,6 +1034,7 @@ cc_defaults {
         "liblog",
         "libutils",
         "server_configurable_flags",
+        "libaconfig_storage_read_api_cc",
     ],
     static_libs: [
         "chre_config_util",
